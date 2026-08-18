@@ -23,10 +23,28 @@ fi
 # Variables
 #################################
 BASE="/opt/station-blanche"
-REPO_URL="https://github.com/kuromasai/Station-blanche.git"
+REPO_URL="git@github.com:kuromasai/test_sb.git"
 YARA_RULES_URL="https://github.com/Neo23x0/signature-base.git"
 ELASTIC_RULES_URL="https://github.com/elastic/protections-artifacts.git"
 TMP_DIR=$(mktemp -d /tmp/station-blanche-install-XXXXXX)
+
+#################################
+# Deploy key pour repo privé
+#################################
+# Le repo test_sb est privé : on clone via SSH avec une deploy key dédiée
+# (lecture seule, pas liée à un compte perso) plutôt que de demander des
+# identifiants à chaque installeur. La clé privée doit être placée à côté
+# de ce script avant de le lancer (jamais committée dans le repo lui-même).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_KEY="$SCRIPT_DIR/station_blanche_deploy_key"
+
+if [ ! -f "$DEPLOY_KEY" ]; then
+  echo "[-] Deploy key introuvable : $DEPLOY_KEY"
+  echo "    Place le fichier de clé privée à côté de ce script avant de le lancer."
+  exit 1
+fi
+chmod 600 "$DEPLOY_KEY"
+export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
 # Nettoyage du dossier temporaire à la fin quoi qu'il arrive
 cleanup() {
@@ -101,7 +119,7 @@ fi
 # Dépendances Python pour l'étape "Analyse documents" (scan_docs.py)
 #################################
 echo "[+] Installation des dépendances Python pour l'analyse Office/PDF"
-pip3 install --break-system-packages python-magic oletools pdfid peepdf-3
+pip3 install --break-system-packages python-magic oletools
 
 #################################
 # Mise à jour signatures ClamAV
