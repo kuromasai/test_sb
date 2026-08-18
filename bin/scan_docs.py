@@ -8,7 +8,6 @@ correlate.py lit ce fichier pour l'intégrer au verdict final.
 """
 import json
 import os
-import subprocess
 
 import magic
 
@@ -52,22 +51,31 @@ def scan_office(abs_path: str) -> list:
 
 
 def scan_pdf(abs_path: str) -> list:
+    """Scan de mots-clés à la PDFiD, fait maison plutôt que de dépendre d'un
+    binaire externe. PDFiD lui-même n'est pas un vrai parseur PDF : il compte
+    des occurrences de mots-clés dans les octets bruts. On reproduit cette
+    logique directement ici (pas de sous-processus, pas de dépendance pip
+    supplémentaire).
+    """
     flags = []
     try:
-        proc = subprocess.run(
-            ["pdfid", abs_path], capture_output=True, text=True, timeout=30
-        )
-        out = proc.stdout
-        if "/JS" in out or "/JavaScript" in out:
-            flags.append("PDF_JAVASCRIPT")
-        if "/AA" in out or "/OpenAction" in out:
-            flags.append("PDF_AUTO_ACTION")
-        if "/EmbeddedFile" in out:
-            flags.append("PDF_EMBEDDED_FILE")
-    except FileNotFoundError:
-        flags.append("PDF_TOOL_MISSING")  # pdfid non installé -> à corriger côté install
-    except subprocess.TimeoutExpired:
-        flags.append("PDF_ANALYSIS_TIMEOUT")
+        with open(abs_path, "rb") as f:
+            data = f.read()
+    except Exception:
+        flags.append("PDF_READ_ERROR")
+        return flags
+
+    if b"/JS" in data or b"/JavaScript" in data:
+        flags.append("PDF_JAVASCRIPT")
+    if b"/AA" in data or b"/OpenAction" in data:
+        flags.append("PDF_AUTO_ACTION")
+    if b"/EmbeddedFile" in data:
+        flags.append("PDF_EMBEDDED_FILE")
+    if b"/Launch" in data:
+        flags.append("PDF_LAUNCH_ACTION")
+    if b"/RichMedia" in data:
+        flags.append("PDF_RICH_MEDIA")
+
     return flags
 
 
