@@ -48,6 +48,7 @@ for filepath, v in correlation.items():
     safe_clam = html_module.escape(v["clamav"])
     safe_yara = html_module.escape(", ".join(v["yara"]))
     safe_docs = html_module.escape(", ".join(v.get("docs", [])))
+    safe_archives = html_module.escape(", ".join(v.get("archives", [])))
     safe_verdict = html_module.escape(v["verdict"])
     rows += f"""
     <tr>
@@ -55,6 +56,7 @@ for filepath, v in correlation.items():
         <td>{safe_clam}</td>
         <td>{safe_yara if safe_yara else "—"}</td>
         <td>{safe_docs if safe_docs else "—"}</td>
+        <td>{safe_archives if safe_archives else "—"}</td>
         <td style="color:{color};font-weight:bold">{safe_verdict}</td>
     </tr>"""
 
@@ -130,6 +132,7 @@ html_content = f"""<!DOCTYPE html>
             <th>ClamAV</th>
             <th>YARA-X</th>
             <th>Documents (Office/PDF)</th>
+            <th>Archives</th>
             <th>Verdict</th>
         </tr>
         {rows}

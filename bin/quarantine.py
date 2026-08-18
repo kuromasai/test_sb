@@ -54,12 +54,13 @@ for filepath, info in data.items():
         try:
             shutil.copy2(src, dst)
             warned += 1
-            reasons = info.get("yara", []) + info.get("docs", [])
+            reasons = info.get("yara", []) + info.get("docs", []) + info.get("archives", [])
             print(f"  [?] SUSPECT copié en quarantaine : {filepath} — indicateurs : {', '.join(reasons)}")
             summary.append({"file": filepath, "verdict": "SUSPICIOUS",
                             "clamav": info.get("clamav", []),
                             "yara": info.get("yara", []),
                             "docs": info.get("docs", []),
+                            "archives": info.get("archives", []),
                             "quarantine_path": dst})
         except Exception as e:
             errors += 1

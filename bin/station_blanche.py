@@ -30,15 +30,16 @@ YARA_RULES = f"{BASE}/yara_rules"
 LOGO_PATH = f"{BASE}/icon/chu_rouen_logo.png"
 
 STEPS = [
-    ("Inventaire",        "list_files.py"),
-    ("ClamAV",            None),
-    ("YARA-X",            None),
-    ("Analyse documents", "scan_docs.py"),
-    ("Parsing ClamAV",    "parse_clamav.py"),
-    ("Parsing YARA",      "parse_yara.py"),
-    ("Corrélation",       "correlate.py"),
-    ("Quarantaine",       "quarantine.py"),
-    ("Rapport",           "generate_report.py"),
+    ("Inventaire",         "list_files.py"),
+    ("ClamAV",             None),
+    ("Vérif. archives",    "scan_archives.py"),
+    ("YARA-X",             None),
+    ("Analyse documents",  "scan_docs.py"),
+    ("Parsing ClamAV",     "parse_clamav.py"),
+    ("Parsing YARA",       "parse_yara.py"),
+    ("Corrélation",        "correlate.py"),
+    ("Quarantaine",        "quarantine.py"),
+    ("Rapport",            "generate_report.py"),
 ]
 
 # Palette extraite du logo CHU Rouen Normandie
@@ -334,14 +335,21 @@ class ScanWorker(QThread):
             self.error_signal.emit("ClamAV a rencontré une erreur (code 2).")
             return
 
-        # Étape 2 : YARA-X
+        # Étape 2 : Vérification archives (mot de passe / chiffrement)
+        self.step_signal.emit(2)
+        self.emit_log("[+] Vérification des archives...")
+        if self.run_python("scan_archives.py") != 0:
+            self.error_signal.emit("Erreur lors de la vérification des archives.")
+            return
+
+        # Étape 3 : YARA-X
         # Certaines règles de signature-base utilisent des variables externes
         # (filename, extension, owner...) que le scanner est censé fournir lui-même
         # au cas par cas -> non fournies ici, elles font planter la compilation.
         # L'ancien scan_usb.sh les excluait déjà via external-variable-rules.txt ;
         # on reproduit la même exclusion, via un dossier filtré de symlinks (yr
         # prend un dossier en RULES_PATH, pas une liste de fichiers à exclure).
-        self.step_signal.emit(2)
+        self.step_signal.emit(3)
         all_rule_files = glob.glob(f"{YARA_RULES}/**/*.yar", recursive=True)
         if not all_rule_files:
             self.error_signal.emit(f"Aucune règle YARA trouvée dans {YARA_RULES}/")
@@ -392,8 +400,8 @@ class ScanWorker(QThread):
             self.error_signal.emit(f"YARA-X a rencontré une erreur (code {yara_exit}).")
             return
 
-        # Étape 3 : Analyse documents (Office/PDF)
-        self.step_signal.emit(3)
+        # Étape 4 : Analyse documents (Office/PDF)
+        self.step_signal.emit(4)
         self.emit_log("[+] Analyse Office/PDF en cours...")
         if self.run_python("scan_docs.py") != 0:
             self.error_signal.emit("Erreur lors de l'analyse documents.")
@@ -401,10 +409,10 @@ class ScanWorker(QThread):
 
         # Étapes Python restantes
         scripts = [
-            (4, "parse_clamav.py", "Parsing ClamAV"),
-            (5, "parse_yara.py",   "Parsing YARA"),
-            (6, "correlate.py",    "Corrélation"),
-            (7, "quarantine.py",   "Quarantaine"),
+            (5, "parse_clamav.py", "Parsing ClamAV"),
+            (6, "parse_yara.py",   "Parsing YARA"),
+            (7, "correlate.py",    "Corrélation"),
+            (8, "quarantine.py",   "Quarantaine"),
         ]
         for step_idx, script, label in scripts:
             self.step_signal.emit(step_idx)
@@ -413,8 +421,8 @@ class ScanWorker(QThread):
                 self.error_signal.emit(f"Erreur lors de : {label}")
                 return
 
-        # Étape 8 : Rapport
-        self.step_signal.emit(8)
+        # Étape 9 : Rapport
+        self.step_signal.emit(9)
         self.emit_log("[+] Génération du rapport")
         if self.run_python("generate_report.py") != 0:
             self.error_signal.emit("Erreur lors de la génération du rapport.")

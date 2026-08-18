@@ -22,16 +22,26 @@ if os.path.exists(docs_path):
     with open(docs_path) as f:
         docs = json.load(f)
 
+archives = {}
+archives_path = f"{LOGS}/archives.json"
+if os.path.exists(archives_path):
+    with open(archives_path) as f:
+        archives = json.load(f)
+
 results = {}
 
 for filepath in files:
     clam = clamav.get(filepath, "OK")
     yar = yara.get(filepath, [])
     doc_flags = docs.get(filepath, [])
+    archive_flags = archives.get(filepath, [])
 
     if clam != "OK":
         verdict = "INFECTED"
-    elif yar or doc_flags:
+    elif yar or doc_flags or "ARCHIVE_PASSWORD_PROTECTED" in archive_flags:
+        # Une archive illisible sans mot de passe = ClamAV n'a rien pu
+        # vérifier dedans -> traitée comme suspecte, pas comme "CLEAN" par
+        # défaut (cf l'échantillon Mirai zippé/protégé passé inaperçu).
         verdict = "SUSPICIOUS"
     else:
         verdict = "CLEAN"
@@ -40,6 +50,7 @@ for filepath in files:
         "clamav": clam,
         "yara": yar,
         "docs": doc_flags,
+        "archives": archive_flags,
         "verdict": verdict
     }
 
