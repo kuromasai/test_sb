@@ -8,6 +8,8 @@ import sys
 import os
 import subprocess
 import glob
+import tempfile
+import shutil
 from datetime import datetime
 
 from PyQt5.QtWidgets import (
@@ -333,27 +335,53 @@ class ScanWorker(QThread):
             return
 
         # Étape 2 : YARA-X
-        # yr accepte un dossier comme RULES_PATH et parcourt récursivement les
-        # .yar/.yara dedans (donc plus besoin de glob à plat comme avant, ce qui
-        # corrige au passage le fait que les règles sont dans des sous-dossiers
-        # yara_rules/signature-base/yara/ et yara_rules/elastic-artifacts/yara/rules/).
+        # Certaines règles de signature-base utilisent des variables externes
+        # (filename, extension, owner...) que le scanner est censé fournir lui-même
+        # au cas par cas -> non fournies ici, elles font planter la compilation.
+        # L'ancien scan_usb.sh les excluait déjà via external-variable-rules.txt ;
+        # on reproduit la même exclusion, via un dossier filtré de symlinks (yr
+        # prend un dossier en RULES_PATH, pas une liste de fichiers à exclure).
         self.step_signal.emit(2)
-        if not glob.glob(f"{YARA_RULES}/**/*.yar", recursive=True):
+        all_rule_files = glob.glob(f"{YARA_RULES}/**/*.yar", recursive=True)
+        if not all_rule_files:
             self.error_signal.emit(f"Aucune règle YARA trouvée dans {YARA_RULES}/")
             return
-        self.emit_log("[+] Scan YARA-X en cours...")
-        with open(f"{LOGS}/yara.ndjson", "w") as yndjson:
-            proc = subprocess.Popen(
-                ["yr", "scan", "--output-format=ndjson", YARA_RULES, MOUNT],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-            )
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line:
-                    self.emit_log(line)
-                    yndjson.write(line + "\n")
-            proc.wait()
-        yara_exit = proc.returncode
+
+        excluded_list_path = f"{YARA_RULES}/signature-base/yara/external-variable-rules.txt"
+        excluded_names = set()
+        if os.path.exists(excluded_list_path):
+            with open(excluded_list_path) as f:
+                excluded_names = {line.strip() for line in f if line.strip()}
+
+        filtered_dir = tempfile.mkdtemp(prefix="yara_filtered_")
+        try:
+            kept = 0
+            for rule_path in all_rule_files:
+                if os.path.basename(rule_path) in excluded_names:
+                    continue
+                rel = os.path.relpath(rule_path, YARA_RULES)
+                dest = os.path.join(filtered_dir, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                os.symlink(rule_path, dest)
+                kept += 1
+
+            self.emit_log(f"[+] {kept} règle(s) YARA chargée(s) ({len(excluded_names)} exclue(s) car variables externes)")
+            self.emit_log("[+] Scan YARA-X en cours...")
+            with open(f"{LOGS}/yara.ndjson", "w") as yndjson:
+                proc = subprocess.Popen(
+                    ["yr", "scan", "--output-format=ndjson", filtered_dir, MOUNT],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+                )
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        self.emit_log(line)
+                        yndjson.write(line + "\n")
+                proc.wait()
+            yara_exit = proc.returncode
+        finally:
+            shutil.rmtree(filtered_dir, ignore_errors=True)
+
         with open(f"{LOGS}/yara.exitcode", "w") as f:
             f.write(str(yara_exit))
         if yara_exit != 0:
