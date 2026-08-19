@@ -370,7 +370,16 @@ class ScanWorker(QThread):
                 rel = os.path.relpath(rule_path, YARA_RULES)
                 dest = os.path.join(filtered_dir, rel)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                os.symlink(rule_path, dest)
+                # Hardlink plutôt que symlink : certains outils (potentiellement
+                # yr) ne suivent pas les liens symboliques en parcourant un
+                # dossier de règles, ce qui chargerait silencieusement 0 règle
+                # réelle malgré un dossier qui a l'air rempli. Le hardlink
+                # apparaît comme un fichier normal, aucune ambiguïté possible.
+                try:
+                    os.link(rule_path, dest)
+                except OSError:
+                    # cross-device (ex: /opt sur un autre fs que /tmp) -> copie
+                    shutil.copy2(rule_path, dest)
                 kept += 1
 
             self.emit_log(f"[+] {kept} règle(s) YARA chargée(s) ({len(excluded_names)} exclue(s) car variables externes)")
