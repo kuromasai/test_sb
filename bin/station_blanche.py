@@ -174,6 +174,12 @@ QProgressBar::chunk {{
     border-radius: 4px;
 }}
 
+QLabel#progress_status {{
+    font-size: 11px;
+    font-weight: 600;
+    color: {CHU_GRAY};
+}}
+
 QTextEdit {{
     background-color: {CHU_SURFACE};
     color: {CHU_TEXT};
@@ -534,28 +540,22 @@ class StationBlanc(QMainWindow):
         root.addWidget(steps_label)
         root.addSpacing(8)
 
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(10)
+
         self.progress = QProgressBar()
         self.progress.setMaximum(len(STEPS))
         self.progress.setValue(0)
-        root.addWidget(self.progress)
-        root.addSpacing(6)
+        progress_row.addWidget(self.progress, 1)
 
-        steps_row = QHBoxLayout()
-        steps_row.setSpacing(0)
-        self.step_labels = []
-        for i, (name, _) in enumerate(STEPS):
-            lbl = QLabel(name)
-            lbl.setObjectName("step_idle")
-            lbl.setAlignment(Qt.AlignCenter)
-            steps_row.addWidget(lbl)
-            self.step_labels.append(lbl)
-            if i < len(STEPS) - 1:
-                sep_lbl = QLabel("›")
-                sep_lbl.setObjectName("step_idle")
-                sep_lbl.setAlignment(Qt.AlignCenter)
-                steps_row.addWidget(sep_lbl)
-        root.addLayout(steps_row)
-        root.addSpacing(4)
+        self.progress_status = QLabel("0 %")
+        self.progress_status.setObjectName("progress_status")
+        self.progress_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.progress_status.setFixedWidth(50)
+        progress_row.addWidget(self.progress_status)
+
+        root.addLayout(progress_row)
+        root.addSpacing(10)
 
         # Status
         self.status_label = QLabel("En attente d'un périphérique")
@@ -652,14 +652,11 @@ class StationBlanc(QMainWindow):
         self.btn_scan.setEnabled(False)
         self.log_view.clear()
         self.progress.setValue(0)
+        self.progress_status.setText("0 %")
         self.status_label.setText("Scan en cours…")
         self.status_label.setObjectName("status_idle")
         self.status_label.setStyleSheet(f"font-size:13px; color:{CHU_BLUE_DARK}; padding:6px;")
         self.tabs.setCurrentIndex(0)
-
-        for lbl in self.step_labels:
-            lbl.setObjectName("step_idle")
-            lbl.setStyleSheet(f"color:{CHU_BORDER}; font-size:12px;")
 
         self.worker = ScanWorker(device)
         self.worker.log_signal.connect(self._log)
@@ -688,24 +685,20 @@ class StationBlanc(QMainWindow):
         self.log_view.append(f'<span style="color:{color}">{safe_msg}</span>')
         self.log_view.moveCursor(QTextCursor.End)
 
+    def _update_progress_status(self):
+        total = self.progress.maximum() or 1
+        pct = int(round(self.progress.value() / total * 100))
+        self.progress_status.setText(f"{pct} %")
+
     def _on_step(self, idx):
-        # Marquer les étapes précédentes comme terminées
-        for i, lbl in enumerate(self.step_labels):
-            if i < idx:
-                lbl.setStyleSheet("color:#2E9E5B; font-size:12px;")
-            elif i == idx:
-                lbl.setStyleSheet(f"color:{CHU_BLUE_DARK}; font-size:12px; font-weight:bold;")
-            else:
-                lbl.setStyleSheet(f"color:{CHU_BORDER}; font-size:12px;")
         self.progress.setValue(idx)
+        self._update_progress_status()
 
     def _on_done(self, report_path):
         self.scan_running = False
         self.btn_scan.setEnabled(True)
         self.progress.setValue(len(STEPS))
-
-        for lbl in self.step_labels:
-            lbl.setStyleSheet("color:#2E9E5B; font-size:12px;")
+        self._update_progress_status()
 
         self._log(f"[✓] Rapport : {report_path}", "ok")
 

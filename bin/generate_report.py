@@ -2,12 +2,26 @@
 import json
 import os
 import subprocess
+import base64
 import html as html_module
 from datetime import datetime
 
 BASE = "/opt/station-blanche"
 LOGS = f"{BASE}/logs"
 REPORTS = f"{BASE}/reports"
+LOGO_PATH = f"{BASE}/icon/chu_rouen_logo.png"
+
+# Palette CHU Rouen Normandie — reprise à l'identique de l'interface (station_blanche.py)
+CHU_BLUE_DARK  = "#005EAA"
+CHU_BLUE_LIGHT = "#03AFE7"
+CHU_GRAY       = "#6E7178"
+CHU_BG         = "#F2F5F8"
+CHU_SURFACE    = "#FFFFFF"
+CHU_BORDER     = "#DCE3EA"
+CHU_TEXT       = "#26313C"
+STATUS_GREEN   = "#2E9E5B"
+STATUS_ORANGE  = "#DB9A2C"
+STATUS_RED     = "#D64545"
 
 os.makedirs(REPORTS, exist_ok=True)
 
@@ -21,25 +35,45 @@ total_files = len(files)
 infected = sum(1 for v in correlation.values() if v["verdict"] == "INFECTED")
 suspicious = sum(1 for v in correlation.values() if v["verdict"] == "SUSPICIOUS")
 
+status_labels = {
+    "INFECTED": "INFECTÉ",
+    "SUSPICIOUS": "SUSPECT",
+    "CLEAN": "PROPRE",
+}
+
 if infected:
     status = "INFECTED"
-    status_color = "#c0392b"
+    status_color = STATUS_RED
 elif suspicious:
     status = "SUSPICIOUS"
-    status_color = "#e67e22"
+    status_color = STATUS_ORANGE
 else:
     status = "CLEAN"
-    status_color = "#27ae60"
+    status_color = STATUS_GREEN
 
-now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+status_label = status_labels[status]
+
+now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 date_file = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 path = f"{REPORTS}/report_{date_file}.html"
 
 verdict_colors = {
-    "INFECTED": "#c0392b",
-    "SUSPICIOUS": "#e67e22",
-    "CLEAN": "#27ae60"
+    "INFECTED": STATUS_RED,
+    "SUSPICIOUS": STATUS_ORANGE,
+    "CLEAN": STATUS_GREEN
 }
+verdict_labels = {
+    "INFECTED": "Infecté",
+    "SUSPICIOUS": "Suspect",
+    "CLEAN": "Propre"
+}
+
+# Logo encodé en base64 pour un rendu fiable en file:// (indépendant du navigateur)
+logo_html = ""
+if os.path.exists(LOGO_PATH):
+    with open(LOGO_PATH, "rb") as f:
+        logo_b64 = base64.b64encode(f.read()).decode("ascii")
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="CHU Rouen Normandie" class="logo">'
 
 rows = ""
 for filepath, v in correlation.items():
@@ -49,7 +83,7 @@ for filepath, v in correlation.items():
     safe_yara = html_module.escape(", ".join(v["yara"]))
     safe_docs = html_module.escape(", ".join(v.get("docs", [])))
     safe_archives = html_module.escape(", ".join(v.get("archives", [])))
-    safe_verdict = html_module.escape(v["verdict"])
+    safe_verdict = html_module.escape(verdict_labels.get(v["verdict"], v["verdict"]))
     rows += f"""
     <tr>
         <td>{safe_path}</td>
@@ -57,7 +91,7 @@ for filepath, v in correlation.items():
         <td>{safe_yara if safe_yara else "—"}</td>
         <td>{safe_docs if safe_docs else "—"}</td>
         <td>{safe_archives if safe_archives else "—"}</td>
-        <td style="color:{color};font-weight:bold">{safe_verdict}</td>
+        <td><span class="verdict-pill" style="color:{color};border-color:{color}">{safe_verdict}</span></td>
     </tr>"""
 
 # Hash recap pour traçabilité forensique
@@ -84,43 +118,153 @@ html_content = f"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Station Blanche – Rapport {date_file}</title>
     <style>
-        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #e0e0e0; margin: 0; padding: 20px; }}
-        h1 {{ color: #00d4ff; border-bottom: 2px solid #00d4ff; padding-bottom: 10px; }}
-        h2 {{ color: #00d4ff; margin-top: 30px; }}
-        .summary {{ background: #16213e; border-radius: 8px; padding: 20px; margin: 20px 0; display: flex; gap: 20px; flex-wrap: wrap; }}
-        .stat {{ background: #0f3460; border-radius: 6px; padding: 15px 25px; text-align: center; }}
-        .stat .value {{ font-size: 2em; font-weight: bold; }}
-        .stat .label {{ font-size: 0.85em; color: #aaa; }}
-        .verdict-badge {{ font-size: 1.5em; font-weight: bold; color: {status_color}; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-        th {{ background: #0f3460; padding: 10px; text-align: left; }}
-        td {{ padding: 8px 10px; border-bottom: 1px solid #2a2a4a; word-break: break-all; }}
-        tr:hover td {{ background: #1e2a4a; }}
-        code {{ font-size: 0.8em; color: #aaa; }}
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: {CHU_BG};
+            color: {CHU_TEXT};
+            margin: 0;
+            padding: 32px 40px;
+        }}
+
+        header {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid {CHU_BORDER};
+            margin-bottom: 24px;
+        }}
+        header .logo {{ height: 40px; }}
+        header h1 {{
+            font-size: 20px;
+            font-weight: 600;
+            color: {CHU_BLUE_DARK};
+            margin: 0;
+            letter-spacing: 0.3px;
+        }}
+        header .subtitle {{
+            font-size: 11px;
+            color: {CHU_GRAY};
+            margin-top: 2px;
+        }}
+
+        h2 {{
+            font-size: 11px;
+            font-weight: 600;
+            color: {CHU_GRAY};
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin: 28px 0 10px 0;
+        }}
+
+        .summary {{
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }}
+        .stat {{
+            background: {CHU_SURFACE};
+            border: 1px solid {CHU_BORDER};
+            border-radius: 8px;
+            padding: 14px 22px;
+            min-width: 120px;
+        }}
+        .stat .value {{
+            font-size: 1.6em;
+            font-weight: 600;
+            color: {CHU_TEXT};
+        }}
+        .stat .label {{
+            font-size: 11px;
+            color: {CHU_GRAY};
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }}
+        .stat.verdict {{
+            border-color: {status_color};
+            border-width: 1px;
+        }}
+        .stat.verdict .value {{ color: {status_color}; }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+            background: {CHU_SURFACE};
+            border: 1px solid {CHU_BORDER};
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+        th {{
+            background: {CHU_BG};
+            color: {CHU_GRAY};
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid {CHU_BORDER};
+        }}
+        td {{
+            padding: 9px 12px;
+            border-bottom: 1px solid {CHU_BORDER};
+            font-size: 13px;
+            word-break: break-all;
+        }}
+        tr:last-child td {{ border-bottom: none; }}
+        tr:hover td {{ background: {CHU_BG}; }}
+
+        .verdict-pill {{
+            display: inline-block;
+            padding: 2px 10px;
+            border: 1px solid;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }}
+
+        code {{
+            font-family: 'Consolas', Monospace;
+            font-size: 0.8em;
+            color: {CHU_GRAY};
+        }}
+
+        footer {{
+            margin-top: 32px;
+            padding-top: 12px;
+            border-top: 1px solid {CHU_BORDER};
+            font-size: 11px;
+            color: {CHU_GRAY};
+        }}
     </style>
 </head>
 <body>
-    <h1>🛡️ Station Blanche – Rapport d'analyse</h1>
+    <header>
+        {logo_html}
+        <div>
+            <h1>Station Blanche — Rapport d'analyse</h1>
+            <div class="subtitle">Usage interne CHU — {now}</div>
+        </div>
+    </header>
 
     <div class="summary">
-        <div class="stat">
-            <div class="label">Date</div>
-            <div style="font-size:1.1em">{now}</div>
-        </div>
-        <div class="stat">
+        <div class="stat verdict">
+            <div class="value">{status_label}</div>
             <div class="label">Verdict global</div>
-            <div class="verdict-badge">{status}</div>
         </div>
         <div class="stat">
             <div class="value">{total_files}</div>
             <div class="label">Fichiers analysés</div>
         </div>
         <div class="stat">
-            <div class="value" style="color:#c0392b">{infected}</div>
+            <div class="value" style="color:{STATUS_RED}">{infected}</div>
             <div class="label">Infectés</div>
         </div>
         <div class="stat">
-            <div class="value" style="color:#e67e22">{suspicious}</div>
+            <div class="value" style="color:{STATUS_ORANGE}">{suspicious}</div>
             <div class="label">Suspects</div>
         </div>
     </div>
@@ -139,6 +283,8 @@ html_content = f"""<!DOCTYPE html>
     </table>
 
     {hash_section}
+
+    <footer>Rapport généré automatiquement par Station Blanche — CHU Rouen Normandie</footer>
 </body>
 </html>"""
 
